@@ -710,6 +710,10 @@ function watchesRoundedUp(hours){
 const DAY_CAP = 12;
 const EPS = 1e-9;
 
+function isConfluence(id){
+  return /confluence/i.test(GRAPH.nodes[id].name);
+}
+
 function buildDailySchedule(legs, overrides){
   const rows = [];
   let i = 0, offset = 0;
@@ -727,14 +731,22 @@ function buildDailySchedule(legs, overrides){
         i += 1;
         if (i === n){ dayDone = true; break; }
         const nextFull = legs[i].hours;
-        if (dayHours + nextFull <= DAY_CAP + EPS){
+        const prevRiver = legs[i-1].route.kind === 'river';
+        const nextRiver = legs[i].route.kind === 'river';
+        if (!prevRiver && nextRiver){
+          // riverboats leave at dawn: switching from land to river always means resting here first
+          rows.push({ kind: 'rest', node: legs[i-1].to, boundaryKey: i, dayHours: dayHours, awaitBoat: true, noPressOn: true });
+          dayDone = true;
+        } else if (dayHours + nextFull <= DAY_CAP + EPS){
           continue;
         } else {
           const key = i;
-          // a full 12-hour day can't press on, so ignore the override there
-          const campChoice = !!overrides[key] && dayHours < DAY_CAP - EPS;
+          // a full 12-hour day can't press on, so ignore the override there;
+          // nor can a passenger press on by river - the boat keeps its own stops
+          const campChoice = !!overrides[key] && dayHours < DAY_CAP - EPS && !nextRiver;
           if (!campChoice){
-            rows.push({ kind: 'rest', node: legs[i-1].to, boundaryKey: key, dayHours: dayHours });
+            rows.push({ kind: 'rest', node: legs[i-1].to, boundaryKey: key, dayHours: dayHours,
+                        noPressOn: nextRiver, moored: prevRiver && nextRiver && isConfluence(legs[i-1].to) });
             dayDone = true;
           } else {
             const capacity = DAY_CAP - dayHours;
@@ -780,9 +792,10 @@ function travelRowLabel(row){
   const startsAtNode = row.fromOffset <= EPS;
   const endsAtNode = row.toOffset >= leg.hours - EPS;
   if (startsAtNode && endsAtNode) return fromName + ' → ' + nodeRef(leg.to);
-  if (startsAtNode && !endsAtNode) return fromName + ' → camp (en route to ' + toName + ')';
-  if (!startsAtNode && endsAtNode) return 'camp → ' + nodeRef(leg.to);
-  return 'camp → camp (en route to ' + toName + ')';
+  const camp = leg.route.kind === 'river' ? 'overnight mooring' : 'camp';
+  if (startsAtNode && !endsAtNode) return fromName + ' → ' + camp + ' (en route to ' + toName + ')';
+  if (!startsAtNode && endsAtNode) return camp + ' → ' + nodeRef(leg.to);
+  return camp + ' → ' + camp + ' (en route to ' + toName + ')';
 }
 
 function travelRowDistance(row){
@@ -958,8 +971,10 @@ function renderLegsAndSchedule(allowForced){
       div.innerHTML =
         '<div class="idx">' + idx + '.</div>' +
         '<div class="desc">' +
-          '<div class="stops">Rest at ' + nodeName + ' after ' + fmtHoursMinutes(row.dayHours) + ' travel</div>' +
-          (row.dayHours < DAY_CAP - EPS
+          '<div class="stops">' + (row.moored ? 'The boat moors at ' : 'Rest at ') + nodeName + ' after ' + fmtHoursMinutes(row.dayHours) + ' travel' +
+            (row.awaitBoat ? ' and secure passage on a riverboat' : '') + '</div>' +
+          (row.awaitBoat ? '<div class="mandatory-note">riverboats leave at dawn; arranging passage may take several days</div>' : '') +
+          (row.dayHours < DAY_CAP - EPS && !row.noPressOn
             ? '<div class="toggle-line">' +
                 '<input type="checkbox" data-boundary="' + row.boundaryKey + '" id="tog-' + row.boundaryKey + '">' +
                 '<label for="tog-' + row.boundaryKey + '">press on instead, and camp partway into the next leg</label>' +
@@ -974,7 +989,7 @@ function renderLegsAndSchedule(allowForced){
         div.innerHTML =
           '<div class="idx">' + idx + '.</div>' +
           '<div class="desc">' +
-            '<div class="stops">Camp beside the road after ' + fmtHoursMinutes(row.dayHours) + ' travel, en route to ' + GRAPH.nodes[row.leg.to].name + '</div>' +
+            '<div class="stops">' + (row.leg.route.kind === 'river' ? 'The boat moors for the night after ' : 'Camp beside the road after ') + fmtHoursMinutes(row.dayHours) + ' travel, en route to ' + GRAPH.nodes[row.leg.to].name + '</div>' +
             '<div class="mandatory-note">the leg to ' + GRAPH.nodes[row.leg.to].name + ' is too long to reach in one day\'s travel</div>' +
           '</div>' +
           '<div class="figs"><span class="n">Night ' + night + '</span><span class="t">12 hrs</span></div>';
@@ -1044,7 +1059,7 @@ function updateSummaryAndSchedule(allowForced){
   document.getElementById('sum-days-unit').textContent = days === 1 ? 'day' : 'days';
   document.getElementById('sum-hm').textContent = fmtHoursMinutes(elapsedHours);
   document.getElementById('days-note').textContent = allowForced
-    ? 'Pushing on without stopping to rest — fatigue rules aren\'t factored in here.'
+    ? 'Pushing on without stopping to rest — fatigue rules aren\'t factored in here. River travel is left out: riverboats don\'t sail at night.'
     : 'Stopping to rest 12 hours after every 12 hours of travel, unless a leg forces an early or mid-route camp.';
   renderLegsAndSchedule(allowForced);
 }
@@ -1064,7 +1079,8 @@ function render(){
   const mode = state.mode;
   const allowForced = document.getElementById('fatigue-toggle').checked;
 
-  const noRiver = document.getElementById('no-river-toggle').checked;
+  // forced march plans land routes only: riverboats don't sail at night
+  const noRiver = document.getElementById('no-river-toggle').checked || allowForced;
 
   const distResult = dijkstra(fromId, toId, (route) => (noRiver && route.kind === 'river') ? Infinity : route.distance);
   const timeResult = dijkstra(fromId, toId, (route, dir) => (noRiver && route.kind === 'river') ? Infinity : watchesForLeg(route, dir, mode) * HOURS_PER_WATCH);
@@ -1129,8 +1145,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('go-btn').addEventListener('click', render);
   document.getElementById('fatigue-toggle').addEventListener('change', () => {
     if (document.getElementById('result-panel').classList.contains('show')){
-      const allowForced = document.getElementById('fatigue-toggle').checked;
-      updateSummaryAndSchedule(allowForced);
+      render();
     }
   });
   document.getElementById('no-river-toggle').addEventListener('change', () => {
