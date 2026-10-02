@@ -572,7 +572,7 @@
       <tr><th></th><th>Downriver</th><th>Upriver</th></tr>
       <tr><td>—</td><td>7</td><td>3</td></tr>
     </table>
-    <p class="note" style="margin-top:0.7rem;">1 Harnic league ≈ 4km ≈ 2.5 miles. Travelers cover 3 watches (12 hours) per day without fatigue; the route below assumes that pace unless forced marches are allowed above. Where a road and a river both connect two places, the reckoner takes whichever is faster for the chosen mode — river travel runs at a fixed current-driven rate regardless of terrain. Carts and wagons can't be carried by riverboats except by special arrangement.</p>
+    <p class="note" style="margin-top:0.7rem;">1 Harnic league ≈ 4km ≈ 2.5 miles. Travelers cover 3 watches (12 hours) per day without fatigue; the route above assumes that pace unless Forced march is ticked. Where a road and a river both connect two places, the planner takes whichever is faster for the chosen mode — river travel runs at a fixed current-driven rate regardless of terrain. Carts and wagons can't be carried by riverboats except by special arrangement.</p>
   </div>
 
   <p class="site-credit">HârnWorld was created by N. Robin Crossby, and Hârn material is published by Columbia Games and Kelestia Productions. The location descriptions, illustrations, and heraldry used in this tool are copyright Columbia Games, Inc., with art by Richard Luschek II and heraldry by C.I. Roegner and Matt Roegner. This is an unofficial fan tool created by John McClure and is not affiliated with either publisher.</p>
@@ -1110,7 +1110,7 @@ function render(){
   errEl.textContent = '';
 
   if (fromId === toId){
-    errEl.textContent = 'Choose two different places to reckon a route between.';
+    errEl.textContent = 'Choose two different places to plan a route between.';
     document.getElementById('result-panel').classList.remove('show');
     return;
   }
